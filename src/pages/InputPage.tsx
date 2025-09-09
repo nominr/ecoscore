@@ -104,7 +104,8 @@ const InputPage: React.FC = () => {
     setZip(zip);
     setResult(null);
     setError(null);
-    navigate('/loading');
+    // Navigate directly to /score?zip=... to support deep links and skip intermediate "loading" page.
+    navigate(`/score?zip=${zip}`);
   };
 
   const title = 'calculate an eco-score:';

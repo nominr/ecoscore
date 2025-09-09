@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import MapView from '../components/MapView';
 import ScoreDetails from '../components/ScoreDetails';
 import HomeButton from '../components/HomeButton';
@@ -8,7 +8,8 @@ import { useGreenScore } from '../context/GreenScoreContext';
 
 const ScorePage: React.FC = () => {
   const navigate = useNavigate();
-  const { zip, result, error, loading, setZip, setResult, setError } = useGreenScore();
+  const [params] = useSearchParams();
+  const { zip, result, error, loading, setZip, setResult, setError, setLoading } = useGreenScore();
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -24,6 +25,37 @@ const ScorePage: React.FC = () => {
     setError(null);
     navigate('/input');
   };
+
+  // If loaded directly with ?zip param, fetch data if context lacks result.
+  useEffect(() => {
+    const urlZip = params.get('zip');
+    // Only fetch if a zip param is present and no result loaded yet.
+    if (!urlZip) return;
+    if (result && zip === urlZip) return;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/green-score?zip=${encodeURIComponent(urlZip)}`);
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        const json = await res.json();
+        if (json?.error) {
+          setError('No data found for this zipcode.');
+          setResult(null);
+        } else {
+          setZip(urlZip);
+          setResult(json);
+          setError(null);
+        }
+      } catch (err) {
+        setError('Failed to load score. Please try again.');
+        setResult(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // We intentionally omit dependencies to only trigger on initial param read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   if (loading) {
     return (
