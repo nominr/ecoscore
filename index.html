@@ -5,13 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Green Score</title>
     <meta name="description" content="Enter a U.S. ZIP to compute a neighborhood eco score using air quality, tree canopy, pavement %, flood risk, traffic, toxic sites, green space and more." />
-    <!-- Leaflet CSS for map rendering -->
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
-      integrity="sha256-sA+oNsN5Jlc94QNV9jja/IbFicdV0lAA9fHnBN5RhZA="
-      crossorigin=""
-    />
+    
+    <link rel="preload"
+          as="style"
+          href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+          integrity="sha256-sA+oNsN5Jlc94QNV9jja/IbFicdV0lAA9fHnBN5RhZA="
+          crossorigin=""
+          onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+      <link rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+            integrity="sha256-sA+oNsN5Jlc94QNV9jja/IbFicdV0lAA9fHnBN5RhZA="
+            crossorigin="">
+    </noscript>
+
     <!-- Simple global styles -->
     <style>
       * {

@@ -9,18 +9,21 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Split vendor libraries into a long-lived cacheable chunk.
+    target: 'es2019',
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks(id) {
-          // Put dependencies into a vendor chunk and page code into a pages chunk.
           if (id.includes('node_modules')) return 'vendor';
-          if (id.includes('/src/pages/')) return 'pages';
+          if (id.includes('/src/components/Globe') ||
+              id.includes('/src/components/MapView') ||
+              id.includes('leaflet') ||
+              id.includes('framer-motion')) {
+            return 'visuals';
+          }
         },
       },
     },
-    // Turn off source maps in prod to reduce build size and fix LH warnings.
-    sourcemap: false,
   },
   server: {
     // By default, Vite uses port 5173; you can change it here if

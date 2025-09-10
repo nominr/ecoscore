@@ -1,12 +1,26 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Globe from '../components/Globe';
 import { INPUT_GLOBE } from '../components/globePresets';
 import HomeButton from '../components/HomeButton';
-import { motion } from 'framer-motion';
 import { useGreenScore } from '../context/GreenScoreContext';
-import Stars from '../components/Stars';
-import OrbitingShip from '../components/OrbitingShip';
+
+// Defer heavy visuals & animation library to post-paint
+const GlobeLazy = React.lazy(() => import('../components/Globe'));
+const StarsLazy = React.lazy(() => import('../components/Stars'));
+const ShipLazy  = React.lazy(() => import('../components/OrbitingShip'));
+
+type FM = typeof import('framer-motion');
+function useFramerMotionIdle() {
+  const [fm, setFm] = React.useState<FM | null>(null);
+  useEffect(() => {
+    const idle = (cb: () => void) =>
+      'requestIdleCallback' in window
+        ? (window as any).requestIdleCallback(cb)
+        : setTimeout(cb, 0);
+    idle(() => import('framer-motion').then(setFm).catch(() => {}));
+  }, []);
+  return fm;
+}
 
 const renderBouncyTitle = (text: string) => {
   const words = text.trim().split(/\s+/);
@@ -33,7 +47,6 @@ const renderBouncyTitle = (text: string) => {
   });
 };
 
-
 const ZIP_RE = /^\d{5}$/;
 
 async function verifyZipExists(zip: string, timeoutMs = 3000): Promise<boolean> {
@@ -49,7 +62,7 @@ async function verifyZipExists(zip: string, timeoutMs = 3000): Promise<boolean> 
   }
 }
 
-const Sizer: React.FC = () => {
+const Sizer: React.FC<{ idleReady: boolean }> = ({ idleReady }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [px, setPx] = useState(0);
 
@@ -66,7 +79,11 @@ const Sizer: React.FC = () => {
 
   return (
     <div ref={ref} style={{ position: 'absolute', inset: 0 }}>
-      {px > 0 && <OrbitingShip parentSize={px} />}
+      {idleReady && px > 0 && (
+        <Suspense fallback={null}>
+          <ShipLazy parentSize={px} />
+        </Suspense>
+      )}
     </div>
   );
 };
@@ -79,6 +96,16 @@ const InputPage: React.FC = () => {
   const [checkingZip, setCheckingZip] = useState(false);
   const [zipErr, setZipErr] = useState<string | null>(null);
 
+  // Load visuals/animations after first paint to cut initial JS/TBT
+  const [idleReady, setIdleReady] = useState(false);
+  useEffect(() => {
+    const idle = (cb: () => void) =>
+      'requestIdleCallback' in window
+        ? (window as any).requestIdleCallback(cb)
+        : setTimeout(cb, 0);
+    idle(() => setIdleReady(true));
+  }, []);
+  const fm = useFramerMotionIdle();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -104,7 +131,7 @@ const InputPage: React.FC = () => {
     setZip(zip);
     setResult(null);
     setError(null);
-    // Navigate directly to /score?zip=... to support deep links and skip intermediate "loading" page.
+    // Deep-link straight to score (so LH can test the route directly)
     navigate(`/score?zip=${zip}`);
   };
 
@@ -114,14 +141,13 @@ const InputPage: React.FC = () => {
       style={{
         position: 'relative',
         width: '100%',
-        minHeight: '100svh',             
-        overflowY: 'auto',               
+        minHeight: '100svh',
+        overflowY: 'auto',
         overflowX: 'clip',
         background: '#000A23',
         color: '#fff'
       }}
     >
-
       {/* Animations + Button Styles */}
       <style>{`
         @keyframes letterBounce {
@@ -135,15 +161,14 @@ const InputPage: React.FC = () => {
         }
 
         .title-word {
-          display: inline-flex;        
+          display: inline-flex;
           flex-wrap: nowrap;
-          white-space: nowrap;         
+          white-space: nowrap;
         }
 
         .title-head {
           line-height: 1.2;
-          /* nicer line breaks for headings on modern browsers */
-          text-wrap: balance;          
+          text-wrap: balance;
         }
 
         .glass-button {
@@ -194,10 +219,14 @@ const InputPage: React.FC = () => {
                       inset 0 0 12px rgba(0, 200, 255, 0.4);
         }
       `}</style>
-      
+
       {/* Subtle starfield behind everything */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
-        <Stars count={160} opacity={0.45} />
+        {idleReady && (
+          <Suspense fallback={null}>
+            <StarsLazy count={160} opacity={0.45} />
+          </Suspense>
+        )}
       </div>
 
       {/* Layout: left (globe) | right (form) */}
@@ -207,20 +236,19 @@ const InputPage: React.FC = () => {
         display:'grid',
         gridTemplateColumns:'1fr 1.5fr',
         minHeight: '100%',
-        alignItems: 'center', 
+        alignItems: 'center',
         paddingBlock: 'clamp(8px, 2vh, 24px)',
         paddingTop: 'max(16px, env(safe-area-inset-top))',
       }}>
 
-        {/* LEFT: Globe lives in the left grid cell */}
+        {/* LEFT: Globe */}
         <div className="globe-col"
           style={{
             display: 'flex',
-            justifyContent: 'center', 
-            paddingLeft: 'clamp(12px, 4vw, 56px)', 
+            justifyContent: 'center',
+            paddingLeft: 'clamp(12px, 4vw, 56px)',
             overflow: 'visible',
           }}>
-
             <div
               className="globe-wrap"
               style={{
@@ -229,18 +257,21 @@ const InputPage: React.FC = () => {
                 aspectRatio: '1/1'
               }}
             >
-              <div className="globe-frame" style={{ 
-                width: 'min(42vmin, calc(100svh - 200px))', 
-                aspectRatio: '1/1', 
-                borderRadius: '50%', 
+              <div className="globe-frame" style={{
+                width: 'min(42vmin, calc(100svh - 200px))',
+                aspectRatio: '1/1',
+                borderRadius: '50%',
                 overflow: 'hidden' }}>
-                <Globe maxSize={2000} controls={INPUT_GLOBE} />
+                {idleReady && (
+                  <Suspense fallback={null}>
+                    <GlobeLazy maxSize={2000} controls={INPUT_GLOBE} />
+                  </Suspense>
+                )}
               </div>
 
               {/* Orbiting ship overlay (hidden on narrow phones) */}
               <div className="ship-layer" style={{ position: 'absolute', inset: 0 }}>
-                {/* Use ResizeObserver to detect pixel size and render ship */}
-                <Sizer />
+                <Sizer idleReady={idleReady} />
               </div>
             </div>
           </div>
@@ -260,22 +291,30 @@ const InputPage: React.FC = () => {
               width: 'min(520px, 92%)',
             }}
           >
-            <motion.h2
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.75rem' }}
-            >
-              {renderBouncyTitle(title)}
-            </motion.h2>
+            {fm ? (
+              <fm.motion.h2
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+                style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.75rem' }}
+              >
+                {renderBouncyTitle(title)}
+              </fm.motion.h2>
+            ) : (
+              <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.75rem' }}>
+                {renderBouncyTitle(title)}
+              </h2>
+            )}
 
             <p style={{ margin: 0, opacity: 0.8, marginBottom: '1.25rem', lineHeight: 1.5 }}>
               Enter any 5-digit U.S. ZIP code.
               <br />
               <small style={{ opacity: 0.7 }}>
-                This tool calculates how 'green' your neighborhood is through consideration of the following factors: air quality, tree canopy cover, pavement percentage, flood risk, traffic conditions, number toxic sites, and green spaces. Of course, these aren't the only factors to consider, but these are a good starting point. You can read about the selection of these parameters and calculation of the score <b>here.</b>
-                <br />
-                <br />
+                This tool calculates how 'green' your neighborhood is through consideration of the following factors:
+                air quality, tree canopy cover, pavement percentage, flood risk, traffic conditions, number toxic sites,
+                and green spaces. Of course, these aren't the only factors to consider, but these are a good starting point.
+                You can read about the selection of these parameters and calculation of the score <b>here.</b>
+                <br /><br />
                 First-time lookups outside Greater Houston may take up to ~15 seconds.
               </small>
             </p>
@@ -307,8 +346,8 @@ const InputPage: React.FC = () => {
                   backdropFilter: 'blur(6px)',
                   WebkitBackdropFilter: 'blur(6px)',
                 }}
-                  aria-invalid={!!zipErr}
-                  aria-describedby="zip-help"   
+                aria-invalid={!!zipErr}
+                aria-describedby="zip-help"
               />
               {zipErr && (
                 <div id="zip-help" style={{ color: '#ff6b6b', fontSize: '0.9rem' }}>
@@ -316,31 +355,21 @@ const InputPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Glass panel submit button to match Home style */}
-              <motion.button
-                type="submit"
-                whileHover={{ y: -2, scale: 1.02 }}
-                whileTap={{ scale: 0.96 }}
-                style={{
-                  position: 'relative',
-                  padding: '0.95rem 1.2rem',
-                  borderRadius: 12,
-                  border: '1px solid rgba(0, 255, 255, 0.4)',
-                  background: 'rgba(0, 40, 80, 0.22)',
-                  color: '#fff',
-                  fontSize: '1rem',
-                  fontWeight: 700,
-                  letterSpacing: 1,
-                  cursor: 'pointer',
-                  boxShadow:
-                    '0 0 14px rgba(0, 255, 255, 0.28), inset 0 0 10px rgba(0, 200, 255, 0.22)',
-                  backdropFilter: 'blur(10px) saturate(160%)',
-                  WebkitBackdropFilter: 'blur(10px) saturate(160%)',
-                }}
-                disabled={checkingZip}
-              >
-                {checkingZip ? 'CHECKING…' : 'CALCULATE'}
-              </motion.button>
+              {fm ? (
+                <fm.motion.button
+                  type="submit"
+                  whileHover={{ y: -2, scale: 1.02 }}
+                  whileTap={{ scale: 0.96 }}
+                  className="glass-button"
+                  disabled={checkingZip}
+                >
+                  {checkingZip ? 'CHECKING…' : 'CALCULATE'}
+                </fm.motion.button>
+              ) : (
+                <button type="submit" className="glass-button" disabled={checkingZip}>
+                  {checkingZip ? 'CHECKING…' : 'CALCULATE'}
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -357,11 +386,11 @@ const InputPage: React.FC = () => {
           .globe-frame { width: min(60vmin, calc(100svh - 220px)); }
         }
         @media (max-width: 520px) {
-          .globe-col { display: none; } /* disappear on small phones */
+          .globe-col { display: none; }
         }
-          
+
         @media (max-width: 900px) {
-          .left-col { /* add class to the left <div> if you like */
+          .left-col {
             display: grid !important;
             place-items: center !important;
           }
@@ -379,7 +408,7 @@ const InputPage: React.FC = () => {
         }
 
         @media (max-width: 520px) {
-          .ship-layer { display: none; }   /* no animation on tiny phones */
+          .ship-layer { display: none; }
         }
         @media (prefers-reduced-motion: reduce) {
           .ship-layer { display: none; }

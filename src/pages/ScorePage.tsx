@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import MapView from '../components/MapView';
-import ScoreDetails from '../components/ScoreDetails';
 import HomeButton from '../components/HomeButton';
-import { motion } from 'framer-motion';
 import { useGreenScore } from '../context/GreenScoreContext';
+
+// Lazy-load heavy components so initial paint is fast
+const MapViewLazy = React.lazy(() => import('../components/MapView'));
+const ScoreDetailsLazy = React.lazy(() => import('../components/ScoreDetails'));
 
 const ScorePage: React.FC = () => {
   const navigate = useNavigate();
@@ -19,19 +20,12 @@ const ScorePage: React.FC = () => {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const handleAnother = () => {
-    setZip('');
-    setResult(null);
-    setError(null);
-    navigate('/input');
-  };
-
-  // If loaded directly with ?zip param, fetch data if context lacks result.
+  // Support deep-linking: /score?zip=77005
   useEffect(() => {
     const urlZip = params.get('zip');
-    // Only fetch if a zip param is present and no result loaded yet.
     if (!urlZip) return;
     if (result && zip === urlZip) return;
+
     (async () => {
       try {
         setLoading(true);
@@ -46,16 +40,22 @@ const ScorePage: React.FC = () => {
           setResult(json);
           setError(null);
         }
-      } catch (err) {
+      } catch (e) {
         setError('Failed to load score. Please try again.');
         setResult(null);
       } finally {
         setLoading(false);
       }
     })();
-    // We intentionally omit dependencies to only trigger on initial param read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
+
+  const handleAnother = () => {
+    setZip('');
+    setResult(null);
+    setError(null);
+    navigate('/input');
+  };
 
   if (loading) {
     return (
@@ -87,7 +87,9 @@ const ScorePage: React.FC = () => {
       {/* LEFT: Map */}
       <div style={{ position:'relative', minHeight: isMobile ? '40vh' : '100%' }}>
         {result ? (
-          <MapView center={result.coordinates} highlightRadiusM={6000} />
+          <Suspense fallback={<div style={{ padding:'2rem' }}>Loading map…</div>}>
+            <MapViewLazy center={result.coordinates} highlightRadiusM={6000} />
+          </Suspense>
         ) : (
           <div style={{ padding:'2rem' }}>No location data available.</div>
         )}
@@ -100,7 +102,7 @@ const ScorePage: React.FC = () => {
           position:'relative',
           display:'grid',
           gridTemplateRows:'auto 1fr auto',
-          minHeight: 0, 
+          minHeight: 0,
           background:'rgba(0, 0, 50, 0.58)',
           backdropFilter:'blur(6px)',
           WebkitBackdropFilter:'blur(6px)',
@@ -116,23 +118,25 @@ const ScorePage: React.FC = () => {
           {!!error && <div style={{ color:'#ff6b6b', marginTop:'0.5rem' }}>No data found for this zipcode.</div>}
         </div>
 
-        {/* Scrollable stats (the key is minHeight:0 + overflowY:auto) */}
+        {/* Scrollable stats */}
         <div
           className="stats-scroll"
           style={{
-            minHeight: 0,          
+            minHeight: 0,
             overflowY: 'auto',
             padding: '1rem 1.25rem'
           }}
         >
           {result ? (
-            <ScoreDetails result={result} />
+            <Suspense fallback={<div style={{ color:'#ccc' }}>Loading details…</div>}>
+              <ScoreDetailsLazy result={result} />
+            </Suspense>
           ) : (
             <div style={{ color:'#ccc' }}>No result to display.</div>
           )}
         </div>
 
-        {/* Sticky actions row */}
+        {/* Actions row */}
         <div
           style={{
             position:'sticky',
@@ -145,10 +149,8 @@ const ScorePage: React.FC = () => {
             justifyContent: isMobile ? 'center' : 'flex-start'
           }}
         >
-          <motion.button
+          <button
             onClick={handleAnother}
-            whileHover={{ y: -2, scale: 1.03 }}
-            whileTap={{ scale: 0.95 }}
             style={{
               padding: '1rem 1.5rem',
               borderRadius: 14,
@@ -168,29 +170,24 @@ const ScorePage: React.FC = () => {
             }}
           >
             calculate another score
-          </motion.button>
-
+          </button>
         </div>
       </div>
 
       {/* Grid CSS for ScoreDetails root */}
       <style>{`
-        /* Make ScoreDetails root a 2-col grid on wider screens */
         .stats-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 1rem 1.25rem;
           align-content: start;
         }
-        /* Ensure items don't overflow and can shrink */
         .stats-grid > * { min-width: 0; }
 
-        /* Stack on mobile */
         @media (max-width: 900px) {
           .stats-grid { grid-template-columns: 1fr; }
         }
 
-        /* Keep animations optional */
         @media (prefers-reduced-motion: reduce) {
           .score-root * { transition: none !important; animation: none !important; }
         }
